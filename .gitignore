@@ -51,3 +51,8 @@ used_car_data.csv
 deploy/start_all.sh
 deploy/stop_all.sh
 *.bak
+
+# Spark 运行时生成
+metastore_db/
+spark-warehouse/
+derby.log
