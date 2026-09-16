@@ -47,9 +47,7 @@ create_ods.hql
 gen_car_data.py
 used_car_data.csv
 
-# deploy 下的旧版启停脚本（以根目录新版为准）
-deploy/start_all.sh
-deploy/stop_all.sh
+# 集群版一键启停脚本（deploy/ 下，以集群版为准）
 *.bak
 
 # Spark 运行时生成
