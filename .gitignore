@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Django
+backend/logs/
+backend/staticfiles/
+backend/static/
+backend/media/
+*.sqlite3
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# 数据与模型（部署时生成，不需要上传）
+data/dataset/*.csv
+ml/models/*.joblib
+ml/models/*.json
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 环境变量
+.env
+
+# 日志
+*.log
+nohup.out
+spark_run.log
+logs/
+
+# 根目录临时文件（排障遗留，按需）
+car_info.java
+create_ods.hql
+gen_car_data.py
+used_car_data.csv
+
+# deploy 下的旧版启停脚本（以根目录新版为准）
+deploy/start_all.sh
+deploy/stop_all.sh
+*.bak
