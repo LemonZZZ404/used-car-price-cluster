@@ -1,171 +1,274 @@
 <template>
   <div class="model-analysis">
-    <!-- 模型重训控制台 -->
-    <div class="card train-console">
-      <div class="card-title" style="margin-bottom:14px">
-        <span>模型重训控制台</span>
-        <el-tag type="warning" effect="light" size="small" round>Celery 异步任务</el-tag>
-      </div>
-      <div class="train-body">
-        <div class="train-left">
-          <el-button
-            type="primary"
-            size="large"
-            :loading="trainState.status === 'running'"
-            :disabled="trainState.status === 'running'"
-            @click="handleTrain"
-            style="background: linear-gradient(90deg, #F59E0B, #FBBF24); border:none; color:#fff"
-          >
-            <el-icon style="margin-right:6px"><Refresh /></el-icon>
-            {{ trainState.status === 'running' ? '训练中...' : '一键重训模型' }}
-          </el-button>
-          <span class="train-hint">基于 {{ (sklearn.train_size ? Number(sklearn.train_size).toLocaleString() : '—') }} 条样本，异步执行全量重训（约 1 分钟）</span>
-        </div>
-        <div class="train-progress" v-if="trainState.status === 'running' || (trainState.status === 'success' && trainState.progress > 0)">
-          <div class="train-progress-head">
-            <span class="train-msg">{{ trainState.message || '准备中...' }}</span>
-            <span class="train-pct">{{ trainState.progress || 0 }}%</span>
+    <el-tabs v-model="activeTab" type="border-card" @tab-change="handleTabChange">
+      <!-- ============ Tab 1 模型总览 ============ -->
+      <el-tab-pane label="模型总览" name="overview">
+        <!-- 模型重训控制台 -->
+        <div class="card train-console">
+          <div class="card-title" style="margin-bottom:14px">
+            <span>模型重训控制台</span>
+            <el-tag type="warning" effect="light" size="small" round>Celery 异步任务</el-tag>
           </div>
-          <el-progress
-            :percentage="trainState.progress || 0"
-            :stroke-width="10"
-            :color="trainState.status === 'error' ? '#EF4444' : 'linear-gradient(90deg, #F59E0B, #FBBF24)'"
-            :status="trainState.status === 'error' ? 'exception' : (trainState.status === 'success' ? 'success' : '')"
-          />
-        </div>
-        <el-alert
-          v-if="trainState.status === 'success' && trainState.metrics && trainState.metrics.r2"
-          type="success"
-          :closable="false"
-          style="margin-top:14px"
-          show-icon
-        >
-          <template #title>
-            <div class="train-success">
-              <span>训练完成：R² = {{ trainState.metrics.r2 }}，RMSE = {{ trainState.metrics.rmse }} 万</span>
-              <span class="train-success-time">（{{ trainState.updated_at }}）</span>
+          <div class="train-body">
+            <div class="train-left">
+              <el-button
+                type="primary"
+                size="large"
+                :loading="trainState.status === 'running'"
+                :disabled="trainState.status === 'running'"
+                @click="handleTrain"
+                style="background: linear-gradient(90deg, #F59E0B, #FBBF24); border:none; color:#fff"
+              >
+                <el-icon style="margin-right:6px"><Refresh /></el-icon>
+                {{ trainState.status === 'running' ? '训练中...' : '一键重训模型' }}
+              </el-button>
+              <span class="train-hint">基于 {{ (sklearn.train_size ? Number(sklearn.train_size).toLocaleString() : '—') }} 条样本，异步执行全量重训（约 1 分钟）</span>
             </div>
-          </template>
-        </el-alert>
-        <el-alert
-          v-if="trainState.status === 'error'"
-          type="error"
-          :closable="false"
-          style="margin-top:14px"
-          show-icon
-          :title="trainState.message"
-        />
-      </div>
-    </div>
+            <div class="train-progress" v-if="trainState.status === 'running' || (trainState.status === 'success' && trainState.progress > 0)">
+              <div class="train-progress-head">
+                <span class="train-msg">{{ trainState.message || '准备中...' }}</span>
+                <span class="train-pct">{{ trainState.progress || 0 }}%</span>
+              </div>
+              <el-progress
+                :percentage="trainState.progress || 0"
+                :stroke-width="10"
+                :color="trainState.status === 'error' ? '#EF4444' : 'linear-gradient(90deg, #F59E0B, #FBBF24)'"
+                :status="trainState.status === 'error' ? 'exception' : (trainState.status === 'success' ? 'success' : '')"
+              />
+            </div>
+            <el-alert
+              v-if="trainState.status === 'success' && trainState.metrics && trainState.metrics.r2"
+              type="success"
+              :closable="false"
+              style="margin-top:14px"
+              show-icon
+            >
+              <template #title>
+                <div class="train-success">
+                  <span>训练完成：R² = {{ trainState.metrics.r2 }}，RMSE = {{ trainState.metrics.rmse }} 万</span>
+                  <span class="train-success-time">（{{ trainState.updated_at }}）</span>
+                </div>
+              </template>
+            </el-alert>
+            <el-alert
+              v-if="trainState.status === 'error'"
+              type="error"
+              :closable="false"
+              style="margin-top:14px"
+              show-icon
+              :title="trainState.message"
+            />
+          </div>
+        </div>
 
-    <!-- 模型对比指标卡片 -->
-    <el-row :gutter="20" class="metric-row">
-      <el-col :xs="24" :sm="12" :md="6">
-        <div class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #2D6BFF, #5B8CFF)">
-            <el-icon><Odometer /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ formatMetric(sklearn.r2) }}</div>
-            <div class="stat-label">R² 决定系数</div>
-          </div>
-        </div>
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="6">
-        <div class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #22C55E, #4ADE80)">
-            <el-icon><TrendCharts /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ formatMetric(sklearn.rmse) }}<span class="stat-unit">万</span></div>
-            <div class="stat-label">RMSE 均方根误差</div>
-          </div>
-        </div>
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="6">
-        <div class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #F59E0B, #FBBF24)">
-            <el-icon><Aim /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ formatMetric(sklearn.mae) }}<span class="stat-unit">万</span></div>
-            <div class="stat-label">MAE 平均绝对误差</div>
-          </div>
-        </div>
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="6">
-        <div class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #EF4444, #F87171)">
-            <el-icon><Cpu /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ formatNumber(sklearn.train_size) }}</div>
-            <div class="stat-label">训练样本数</div>
-          </div>
-        </div>
-      </el-col>
-    </el-row>
+        <!-- 模型对比指标卡片 -->
+        <el-row :gutter="20" class="metric-row">
+          <el-col :xs="24" :sm="12" :md="6">
+            <div class="stat-card">
+              <div class="stat-icon" style="background: linear-gradient(135deg, #2D6BFF, #5B8CFF)">
+                <el-icon><Odometer /></el-icon>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value">{{ formatMetric(sklearn.r2) }}</div>
+                <div class="stat-label">R² 决定系数</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="6">
+            <div class="stat-card">
+              <div class="stat-icon" style="background: linear-gradient(135deg, #22C55E, #4ADE80)">
+                <el-icon><TrendCharts /></el-icon>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value">{{ formatMetric(sklearn.rmse) }}<span class="stat-unit">万</span></div>
+                <div class="stat-label">RMSE 均方根误差</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="6">
+            <div class="stat-card">
+              <div class="stat-icon" style="background: linear-gradient(135deg, #F59E0B, #FBBF24)">
+                <el-icon><Aim /></el-icon>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value">{{ formatMetric(sklearn.mae) }}<span class="stat-unit">万</span></div>
+                <div class="stat-label">MAE 平均绝对误差</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="6">
+            <div class="stat-card">
+              <div class="stat-icon" style="background: linear-gradient(135deg, #EF4444, #F87171)">
+                <el-icon><Cpu /></el-icon>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value">{{ formatNumber(sklearn.train_size) }}</div>
+                <div class="stat-label">训练样本数</div>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
 
-    <el-row :gutter="20">
-      <!-- 特征重要性 -->
-      <el-col :xs="24" :md="14">
+        <!-- 模型文件与配置 -->
         <div class="card">
           <div class="card-title">
-            <span>特征重要性 Top 12</span>
-            <el-tag type="primary" effect="light" size="small" round>Scikit-learn 随机森林</el-tag>
+            <span>模型文件与配置</span>
+            <el-tag type="success" effect="light" size="small" round>生产加载</el-tag>
           </div>
-          <div ref="importanceChartRef" v-loading="loading" class="chart-container-lg"></div>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="模型文件">rf_price_model.joblib</el-descriptions-item>
+            <el-descriptions-item label="模型类型">{{ sklearn.model || 'Scikit-learn RandomForestRegressor' }}</el-descriptions-item>
+            <el-descriptions-item label="文件大小">26 MB</el-descriptions-item>
+            <el-descriptions-item label="特征维度">{{ featureImportance.length }} 个特征</el-descriptions-item>
+            <el-descriptions-item label="训练 / 测试样本">
+              {{ sklearn.train_size ? Number(sklearn.train_size).toLocaleString() : '-' }} / {{ sklearn.test_size ? Number(sklearn.test_size).toLocaleString() : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="树数量 / 最大深度">
+              {{ sklearn.n_estimators ?? '-' }} / {{ sklearn.max_depth ?? '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="训练耗时">
+              {{ sklearn.train_time_seconds ? sklearn.train_time_seconds + ' 秒' : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="最近训练时间">
+              <span style="color:#2D6BFF;font-weight:600">{{ sklearn.train_time || '-' }}</span>
+            </el-descriptions-item>
+          </el-descriptions>
         </div>
-      </el-col>
+      </el-tab-pane>
 
-      <!-- 模型对比 -->
-      <el-col :xs="24" :md="10">
-        <div class="card">
-          <div class="card-title">模型性能对比</div>
-          <div ref="compareChartRef" v-loading="loading" class="chart-container-lg"></div>
+      <!-- ============ Tab 2 特征分析 ============ -->
+      <el-tab-pane label="特征分析" name="features">
+        <el-row :gutter="20">
+          <el-col :xs="24" :md="12">
+            <div class="card">
+              <div class="card-title">
+                <span>特征重要性 Top 12</span>
+                <el-tag type="primary" effect="light" size="small" round>Scikit-learn 随机森林</el-tag>
+              </div>
+              <div ref="importanceChartRef" v-loading="loading" class="chart-container-lg"></div>
+            </div>
+          </el-col>
+          <el-col :xs="24" :md="12">
+            <div class="card">
+              <div class="card-title">
+                <span>特征贡献解读</span>
+                <el-tag type="info" effect="light" size="small" round>模型可解释性</el-tag>
+              </div>
+              <div class="insight-list">
+                <div v-if="featureRows.length >= 3" class="insight-item">
+                  <div class="insight-tag">TOP 1</div>
+                  <div class="insight-text"><b>{{ featureRows[0].label }}</b> 贡献 {{ featureRows[0].pct }}%，是价格最主要决定因素</div>
+                </div>
+                <div v-if="featureRows.length >= 3" class="insight-item">
+                  <div class="insight-tag" style="background:#E0F2FE;color:#0369A1">TOP 2</div>
+                  <div class="insight-text"><b>{{ featureRows[1].label }}</b> 贡献 {{ featureRows[1].pct }}%，与 {{ featureRows[0].label }} 合计 {{ (featureRows[0].pct*1 + featureRows[1].pct*1).toFixed(2) }}%</div>
+                </div>
+                <div v-if="featureRows.length >= 3" class="insight-item">
+                  <div class="insight-tag" style="background:#DCFCE7;color:#15803D">TOP 3</div>
+                  <div class="insight-text"><b>{{ featureRows[2].label }}</b> 贡献 {{ featureRows[2].pct }}%，前 3 项累计 {{ (featureRows[0].pct*1 + featureRows[1].pct*1 + featureRows[2].pct*1).toFixed(2) }}%</div>
+                </div>
+                <div v-if="featureRows.length" class="insight-item">
+                  <div class="insight-tag" style="background:#F3F4F6;color:#4B5563">品牌</div>
+                  <div class="insight-text">品牌哑变量合计 {{ brandTotalPct }}%，反映品牌溢价对二手车价的影响</div>
+                </div>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+
+        <!-- 特征重要性完整明细表 -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-title">
+            <span>特征重要性明细（全量 {{ featureRows.length }} 个特征）</span>
+            <el-tag type="primary" effect="plain" size="small" round>按贡献排序</el-tag>
+          </div>
+          <el-table :data="featureRows" v-loading="loading" stripe border size="small">
+            <el-table-column prop="rank" label="排名" width="70" align="center">
+              <template #default="{ row }">
+                <span v-if="row.rank <= 3" class="rank-badge">{{ row.rank }}</span>
+                <span v-else style="color:#9CA3AF">{{ row.rank }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="label" label="特征" min-width="140">
+              <template #default="{ row }">
+                <span style="font-weight:600">{{ row.label }}</span>
+                <span style="color:#C0C4CC;font-size:12px;margin-left:6px">{{ row.feature }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="重要性" width="220">
+              <template #default="{ row }">
+                <el-progress
+                  :percentage="Math.round(row.pct)"
+                  :stroke-width="8"
+                  :show-text="false"
+                  :color="row.rank <= 3 ? 'linear-gradient(90deg,#5B8CFF,#2D6BFF)' : '#93C5FD'"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column prop="pct" label="贡献占比" width="100" align="right">
+              <template #default="{ row }">
+                <span style="font-weight:600;color:#2D6BFF">{{ row.pct }}%</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="cum" label="累计贡献" width="110" align="right">
+              <template #default="{ row }">
+                <span style="color:#6B7280">{{ row.cum }}%</span>
+              </template>
+            </el-table-column>
+          </el-table>
         </div>
-      </el-col>
-    </el-row>
+      </el-tab-pane>
 
-    <!-- 模型性能指标明细（分组 + 评分） -->
-    <div class="card" style="margin-top:20px">
-      <div class="card-title">
-        <span>模型性能指标明细</span>
-        <el-tag type="success" effect="light" size="small" round>Scikit-learn 当前模型</el-tag>
-      </div>
-      <el-table :data="compareRows" v-loading="loading" stripe border size="default">
-        <el-table-column prop="group" label="分组" width="90">
-          <template #default="{ row }">
-            <el-tag :type="row.groupType" size="small" effect="plain">{{ row.group }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="metric" label="指标" width="170" />
-        <el-table-column prop="sklearn" label="Scikit-learn 随机森林" width="190" />
-        <el-table-column prop="spark" label="Spark MLlib 随机森林" width="190" />
-        <el-table-column label="评分" width="110">
-          <template #default="{ row }">
-            <el-tag v-if="row.grade" :type="row.gradeType" size="small" effect="dark" round>{{ row.grade }}</el-tag>
-            <span v-else style="color:#C0C4CC">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="说明" min-width="200">
-          <template #default="{ row }">
-            <span style="color:#6B7280;font-size:13px">{{ row.desc }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-alert
-        v-if="compareNote"
-        type="info"
-        :closable="false"
-        style="margin-top:16px"
-        :title="compareNote"
-      />
-    </div>
+      <!-- ============ Tab 3 性能对比 ============ -->
+      <el-tab-pane label="性能对比" name="compare">
+        <el-row :gutter="20">
+          <el-col :xs="24" :md="10">
+            <div class="card">
+              <div class="card-title">模型性能对比</div>
+              <div ref="compareChartRef" v-loading="loading" class="chart-container-lg"></div>
+            </div>
+          </el-col>
+          <el-col :xs="24" :md="14">
+            <div class="card">
+              <div class="card-title">
+                <span>性能指标明细</span>
+                <el-tag type="success" effect="light" size="small" round>Scikit-learn 当前模型</el-tag>
+              </div>
+              <el-table :data="compareRows" v-loading="loading" stripe border size="default">
+                <el-table-column prop="group" label="分组" width="80">
+                  <template #default="{ row }">
+                    <el-tag :type="row.groupType" size="small" effect="plain">{{ row.group }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="metric" label="指标" min-width="130" />
+                <el-table-column prop="sklearn" label="Scikit-learn" width="150" />
+                <el-table-column prop="spark" label="Spark MLlib" width="150" />
+                <el-table-column label="评分" width="90">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.grade" :type="row.gradeType" size="small" effect="dark" round>{{ row.grade }}</el-tag>
+                    <span v-else style="color:#C0C4CC">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="说明" min-width="160">
+                  <template #default="{ row }">
+                    <span style="color:#6B7280;font-size:12.5px">{{ row.desc }}</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <el-alert
+                v-if="compareNote"
+                type="info"
+                :closable="false"
+                style="margin-top:16px"
+                :title="compareNote"
+              />
+            </div>
+          </el-col>
+        </el-row>
+      </el-tab-pane>
 
-    <!-- 数据血缘 + 模型文件 -->
-    <el-row :gutter="20" style="margin-top:20px">
-      <el-col :xs="24" :md="14">
+      <!-- ============ Tab 4 数据血缘 ============ -->
+      <el-tab-pane label="数据血缘" name="lineage">
         <div class="card">
           <div class="card-title">
             <span>数据血缘 · ETL 链路</span>
@@ -177,14 +280,14 @@
                 <span style="font-weight:600">{{ row.stage }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="engine" label="引擎/组件" width="130" />
+            <el-table-column prop="engine" label="引擎/组件" width="140" />
             <el-table-column prop="count" label="数据量" width="130">
               <template #default="{ row }">
                 <span v-if="row.count" style="font-weight:600;color:#2D6BFF">{{ row.count }}</span>
                 <span v-else style="color:#C0C4CC">—</span>
               </template>
             </el-table-column>
-            <el-table-column prop="desc" label="说明" min-width="180">
+            <el-table-column prop="desc" label="说明" min-width="200">
               <template #default="{ row }">
                 <span style="color:#6B7280;font-size:12.5px">{{ row.desc }}</span>
               </template>
@@ -201,44 +304,24 @@
             <span class="flow-arrow">→</span>
             <el-tag size="small" effect="plain" type="primary">Django/Vue</el-tag>
           </div>
-        </div>
-      </el-col>
-      <el-col :xs="24" :md="10">
-        <div class="card">
-          <div class="card-title">
-            <span>模型文件与配置</span>
-            <el-tag type="success" effect="light" size="small" round>生产加载</el-tag>
+          <div class="lineage-note">
+            <el-icon style="margin-right:6px;color:#F59E0B"><InfoFilled /></el-icon>
+            <span>数据从 MySQL 业务库经 Sqoop 入仓，Hive 清洗建模（ODS→DWD），Spark SQL 聚合出 ADS 统计结果，最终由 Django API 供前端看板与预测使用。</span>
           </div>
-          <el-descriptions :column="1" border size="small">
-            <el-descriptions-item label="模型文件">rf_price_model.joblib</el-descriptions-item>
-            <el-descriptions-item label="模型类型">{{ sklearn.model || 'Scikit-learn RandomForestRegressor' }}</el-descriptions-item>
-            <el-descriptions-item label="文件大小">26 MB</el-descriptions-item>
-            <el-descriptions-item label="训练/测试样本">
-              {{ sklearn.train_size ? Number(sklearn.train_size).toLocaleString() : '-' }} / {{ sklearn.test_size ? Number(sklearn.test_size).toLocaleString() : '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="树数量 / 最大深度">
-              {{ sklearn.n_estimators ?? '-' }} / {{ sklearn.max_depth ?? '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="训练耗时">
-              {{ sklearn.train_time_seconds ? sklearn.train_time_seconds + ' 秒' : '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="最近训练时间">
-              <span style="color:#2D6BFF;font-weight:600">{{ sklearn.train_time || '-' }}</span>
-            </el-descriptions-item>
-          </el-descriptions>
         </div>
-      </el-col>
-    </el-row>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { Odometer, TrendCharts, Aim, Cpu, Refresh } from '@element-plus/icons-vue'
+import { Odometer, TrendCharts, Aim, Cpu, Refresh, InfoFilled } from '@element-plus/icons-vue'
 import { getModelAnalysis, trainStart, trainStatus } from '@/api'
 
+const activeTab = ref('overview')
 const loading = ref(false)
 const data = ref({})
 const importanceChartRef = ref(null)
@@ -252,7 +335,37 @@ const sklearn = computed(() => data.value.sklearn_metrics || {})
 const spark = computed(() => data.value.spark_metrics || {})
 const featureImportance = computed(() => data.value.feature_importance || [])
 
-// 指标明细行（分组 + 评分）
+// ---------- 特征分析 ----------
+const featureLabel = (f) => {
+  if (f.startsWith('brand_')) return '品牌-' + f.slice(6)
+  const map = { original_price: '新车价格', age: '车龄', mileage: '行驶里程' }
+  return map[f] || f
+}
+
+const featureRows = computed(() => {
+  const sorted = [...featureImportance.value].sort((a, b) => b.importance - a.importance)
+  let acc = 0
+  return sorted.map((item, idx) => {
+    acc += item.importance
+    return {
+      rank: idx + 1,
+      feature: item.feature,
+      label: featureLabel(item.feature),
+      importance: item.importance,
+      pct: (item.importance * 100).toFixed(2),
+      cum: (acc * 100).toFixed(2)
+    }
+  })
+})
+
+const brandTotalPct = computed(() => {
+  const total = featureRows.value
+    .filter(r => r.feature.startsWith('brand_'))
+    .reduce((s, r) => s + Number(r.pct), 0)
+  return total.toFixed(2)
+})
+
+// ---------- 性能明细 ----------
 const gradeOf = (score, type) => {
   if (score === undefined || score === null) return null
   if (type === 'r2') {
@@ -285,7 +398,16 @@ const compareRows = computed(() => {
   ]
 })
 
-// 数据血缘（三机集群实测）
+const compareNote = computed(() => {
+  const s = sklearn.value
+  const sp = spark.value
+  if (s && sp && s.train_size && sp.train_size && s.train_size > sp.train_size) {
+    return `说明：Scikit-learn 使用 ${Number(s.train_size).toLocaleString()} 条样本训练（在线预测），Spark MLlib 为早期 ${Number(sp.train_size).toLocaleString()} 条小样本对比实验（离线训练演示）。两者体现"单机 vs 分布式"两种技术路线。`
+  }
+  return ''
+})
+
+// ---------- 数据血缘 ----------
 const lineageRows = [
   { stage: '业务库', engine: 'MySQL', count: '999,999 条', desc: 'car_info 车辆信息表（18 列）' },
   { stage: '采集', engine: 'Sqoop', count: '999,998 条', desc: '14 列精确导入 HDFS' },
@@ -297,16 +419,6 @@ const lineageRows = [
   { stage: '应用层', engine: 'Django/Vue', count: '—', desc: '看板 / 预测 / 模型分析' }
 ]
 
-// 说明：Spark MLlib 是早期小样本实验，与 sklearn 百万样本对比说明
-const compareNote = computed(() => {
-  const s = sklearn.value
-  const sp = spark.value
-  if (s && sp && s.train_size && sp.train_size && s.train_size > sp.train_size) {
-    return `说明：Scikit-learn 使用 ${Number(s.train_size).toLocaleString()} 条样本训练（在线预测），Spark MLlib 为早期 ${Number(sp.train_size).toLocaleString()} 条小样本对比实验（离线训练演示）。两者不可直接横向比较精度，体现的是"单机 vs 分布式"两种技术路线。`
-  }
-  return ''
-})
-
 const formatNumber = (n) => {
   if (n === undefined || n === null) return '-'
   return Number(n).toLocaleString('zh-CN')
@@ -317,79 +429,18 @@ const formatMetric = (v) => {
   return Number(v).toFixed(4)
 }
 
-const initCharts = () => {
-  if (importanceChartRef.value) importanceChart = echarts.init(importanceChartRef.value)
-  if (compareChartRef.value) compareChart = echarts.init(compareChartRef.value)
-}
-
-const handleTrain = async () => {
-  try {
-    const res = await trainStart()
-    if (res.code === 200) {
-      ElMessage.success('训练任务已提交，正在后台异步执行')
-      pollTrainStatus()
-    } else {
-      ElMessage.warning(res.message || '训练任务启动失败')
-      // 已在训练中则也开启轮询看进度
-      if (res.code === 400) pollTrainStatus()
-    }
-  } catch (e) {
-    ElMessage.error('提交训练任务失败，请确认后端与 Celery 服务正常')
-  }
-}
-
-const pollTrainStatus = async () => {
-  clearInterval(trainPollTimer)
-  trainPollTimer = setInterval(async () => {
-    try {
-      const res = await trainStatus()
-      if (res.code === 200) {
-        trainState.value = res.data
-        if (res.data.status === 'success' || res.data.status === 'error') {
-          clearInterval(trainPollTimer)
-          if (res.data.status === 'success') {
-            ElMessage.success('模型训练完成！')
-            // 刷新指标数据
-            await loadData()
-          } else {
-            ElMessage.error('模型训练失败')
-          }
-        }
-      }
-    } catch (e) {
-      clearInterval(trainPollTimer)
-    }
-  }, 3000)
-}
-
-const loadData = async () => {
-  loading.value = true
-  try {
-    const res = await getModelAnalysis()
-    if (res.code === 200) {
-      data.value = res.data
-      nextTick(() => {
-        renderImportanceChart()
-        renderCompareChart()
-      })
-    }
-  } catch (e) {
-    console.error('加载模型分析数据失败', e)
-  } finally {
-    loading.value = false
-  }
-}
-
+// ---------- 图表 ----------
 const renderImportanceChart = () => {
-  if (!importanceChart || featureImportance.value.length === 0) return
-  const items = [...featureImportance.value].reverse()
+  if (!importanceChartRef.value) return
+  if (!importanceChart) importanceChart = echarts.init(importanceChartRef.value)
+  const items = [...featureImportance.value].sort((a, b) => b.importance - a.importance).slice(0, 12).reverse()
   importanceChart.setOption({
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       formatter: (params) => {
         const p = params[0]
-        return `${p.name}<br/>重要性：${(p.value * 100).toFixed(2)}%`
+        return `${featureLabel(p.name)}<br/>重要性：${(p.value * 100).toFixed(2)}%`
       }
     },
     grid: { left: '3%', right: '8%', bottom: '3%', containLabel: true },
@@ -400,7 +451,7 @@ const renderImportanceChart = () => {
     },
     yAxis: {
       type: 'category',
-      data: items.map(i => i.feature),
+      data: items.map(i => featureLabel(i.feature)),
       axisLabel: { color: '#4B5563' },
       axisLine: { lineStyle: { color: '#E5E7EB' } }
     },
@@ -424,20 +475,15 @@ const renderImportanceChart = () => {
       }
     }]
   })
+  importanceChart.resize()
 }
 
 const renderCompareChart = () => {
-  if (!compareChart) return
+  if (!compareChartRef.value) return
+  if (!compareChart) compareChart = echarts.init(compareChartRef.value)
   const s = sklearn.value
   const sp = spark.value
   if (!s || !sp) return
-
-  // 归一化对比：R² 越大越好，误差越小越好（用 1-RMSE/10 之类归一化）
-  const metrics = [
-    { name: 'R²', s: s.r2 ?? 0, sp: sp.r2 ?? 0, max: 1 },
-    { name: 'RMSE', s: s.rmse ?? 0, sp: sp.rmse ?? 0, max: 10 },
-    { name: 'MAE', s: s.mae ?? 0, sp: sp.mae ?? 0, max: 10 }
-  ]
 
   compareChart.setOption({
     tooltip: {},
@@ -459,14 +505,14 @@ const renderCompareChart = () => {
       data: [
         {
           name: 'Scikit-learn',
-          value: [metrics[0].s, metrics[1].s, metrics[2].s],
+          value: [s.r2 ?? 0, s.rmse ?? 0, s.mae ?? 0],
           areaStyle: { color: 'rgba(45,107,255,0.2)' },
           lineStyle: { color: '#2D6BFF', width: 2 },
           itemStyle: { color: '#2D6BFF' }
         },
         {
           name: 'Spark MLlib',
-          value: [metrics[0].sp, metrics[1].sp, metrics[2].sp],
+          value: [sp.r2 ?? 0, sp.rmse ?? 0, sp.mae ?? 0],
           areaStyle: { color: 'rgba(34,197,94,0.15)' },
           lineStyle: { color: '#22C55E', width: 2 },
           itemStyle: { color: '#22C55E' }
@@ -474,6 +520,71 @@ const renderCompareChart = () => {
       ]
     }]
   })
+  compareChart.resize()
+}
+
+// Tab 切换：目标 tab 内的图表需要等 DOM 可见后再 init/render
+const handleTabChange = () => {
+  nextTick(() => {
+    if (activeTab.value === 'features') renderImportanceChart()
+    if (activeTab.value === 'compare') renderCompareChart()
+  })
+}
+
+const handleTrain = async () => {
+  try {
+    const res = await trainStart()
+    if (res.code === 200) {
+      ElMessage.success('训练任务已提交，正在后台异步执行')
+      pollTrainStatus()
+    } else {
+      ElMessage.warning(res.message || '训练任务启动失败')
+      if (res.code === 400) pollTrainStatus()
+    }
+  } catch (e) {
+    ElMessage.error('提交训练任务失败，请确认后端与 Celery 服务正常')
+  }
+}
+
+const pollTrainStatus = async () => {
+  clearInterval(trainPollTimer)
+  trainPollTimer = setInterval(async () => {
+    try {
+      const res = await trainStatus()
+      if (res.code === 200) {
+        trainState.value = res.data
+        if (res.data.status === 'success' || res.data.status === 'error') {
+          clearInterval(trainPollTimer)
+          if (res.data.status === 'success') {
+            ElMessage.success('模型训练完成！')
+            await loadData()
+          } else {
+            ElMessage.error('模型训练失败')
+          }
+        }
+      }
+    } catch (e) {
+      clearInterval(trainPollTimer)
+    }
+  }, 3000)
+}
+
+const loadData = async () => {
+  loading.value = true
+  try {
+    const res = await getModelAnalysis()
+    if (res.code === 200) {
+      data.value = res.data
+      nextTick(() => {
+        if (activeTab.value === 'features') renderImportanceChart()
+        if (activeTab.value === 'compare') renderCompareChart()
+      })
+    }
+  } catch (e) {
+    console.error('加载模型分析数据失败', e)
+  } finally {
+    loading.value = false
+  }
 }
 
 const handleResize = () => {
@@ -483,9 +594,7 @@ const handleResize = () => {
 
 onMounted(async () => {
   await nextTick()
-  initCharts()
   loadData()
-  // 初始化训练状态（若上次训练中断，可恢复进度显示）
   try {
     const res = await trainStatus()
     if (res.code === 200) trainState.value = res.data
@@ -581,5 +690,60 @@ onUnmounted(() => {
 .flow-arrow {
   color: #9CA3AF;
   font-size: 12px;
+}
+
+.lineage-note {
+  margin-top: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 13px;
+  color: #6B7280;
+  line-height: 1.6;
+}
+
+.insight-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.insight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #F9FAFB;
+  border-radius: 8px;
+  border-left: 3px solid #2D6BFF;
+}
+
+.insight-tag {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #DBEAFE;
+  color: #1D4ED8;
+}
+
+.insight-text {
+  font-size: 13px;
+  color: #4B5563;
+  line-height: 1.6;
+}
+
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2D6BFF, #5B8CFF);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
 }
 </style>
