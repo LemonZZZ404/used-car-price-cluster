@@ -40,6 +40,19 @@
           <el-icon><History /></el-icon>
           <template #title>预测历史</template>
         </el-menu-item>
+        <div class="menu-divider" v-if="!isCollapse">大数据链路</div>
+        <el-menu-item index="/lineage">
+          <el-icon><Connection /></el-icon>
+          <template #title>数据血缘</template>
+        </el-menu-item>
+        <el-menu-item index="/system">
+          <el-icon><Monitor /></el-icon>
+          <template #title>系统状态</template>
+        </el-menu-item>
+        <el-menu-item index="/about">
+          <el-icon><InfoFilled /></el-icon>
+          <template #title>关于项目</template>
+        </el-menu-item>
       </el-menu>
       <div class="sidebar-footer" v-if="!isCollapse">
         <div class="footer-dot"></div>
@@ -182,6 +195,14 @@ onUnmounted(() => {
 
 .sidebar-menu :deep(.el-menu-item.is-active .el-icon) {
   color: #fff;
+}
+
+.menu-divider {
+  font-size: 11px;
+  color: #64748B;
+  padding: 14px 12px 6px;
+  letter-spacing: 1px;
+  font-weight: 600;
 }
 
 .sidebar-footer {

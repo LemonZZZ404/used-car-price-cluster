@@ -34,6 +34,24 @@ const routes = [
     name: 'History',
     component: () => import('@/views/History.vue'),
     meta: { title: '预测历史' }
+  },
+  {
+    path: '/lineage',
+    name: 'DataLineage',
+    component: () => import('@/views/DataLineage.vue'),
+    meta: { title: '数据血缘' }
+  },
+  {
+    path: '/system',
+    name: 'SystemStatus',
+    component: () => import('@/views/SystemStatus.vue'),
+    meta: { title: '系统状态' }
+  },
+  {
+    path: '/about',
+    name: 'About',
+    component: () => import('@/views/About.vue'),
+    meta: { title: '关于项目' }
   }
 ]
 
