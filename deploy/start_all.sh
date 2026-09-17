@@ -88,12 +88,12 @@ done
 echo "[6/9] Hive Metastore + HiveServer2 (101) ..."
 if port_in_use 9083; then skip "Metastore 已在运行 (9083)"; else
     nohup hive --service metastore > "$LOG_DIR/metastore.log" 2>&1 &
-    sleep 6
+    for i in $(seq 1 8); do sleep 5; port_in_use 9083 && break; done
     port_in_use 9083 && ok "Metastore 已启动 (9083)" || fail "Metastore 启动失败，看 $LOG_DIR/metastore.log"
 fi
 if port_in_use 10000; then skip "HiveServer2 已在运行 (10000)"; else
     nohup hiveserver2 > "$LOG_DIR/hiveserver2.log" 2>&1 &
-    sleep 10
+    for i in $(seq 1 16); do sleep 5; port_in_use 10000 && break; done
     port_in_use 10000 && ok "HiveServer2 已启动 (10000)" || fail "HiveServer2 启动失败，看 $LOG_DIR/hiveserver2.log"
 fi
 
