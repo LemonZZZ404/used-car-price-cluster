@@ -159,9 +159,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # DRF 配置
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.BasicAuthentication',
+        # 纯 Token 认证：避免 SessionAuthentication 的 CSRF 校验与浏览器残留 sessionid 冲突
         'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',  # 毕设演示用，生产环境改IsAuthenticated
