@@ -127,14 +127,28 @@
       </el-col>
     </el-row>
 
-    <!-- 模型对比明细表 -->
+    <!-- 模型性能指标明细（分组 + 评分） -->
     <div class="card" style="margin-top:20px">
-      <div class="card-title">模型训练指标明细</div>
+      <div class="card-title">
+        <span>模型性能指标明细</span>
+        <el-tag type="success" effect="light" size="small" round>Scikit-learn 当前模型</el-tag>
+      </div>
       <el-table :data="compareRows" v-loading="loading" stripe border size="default">
-        <el-table-column prop="metric" label="指标" width="200" />
-        <el-table-column prop="sklearn" label="Scikit-learn 随机森林" />
-        <el-table-column prop="spark" label="Spark MLlib 随机森林" />
-        <el-table-column label="说明" min-width="220">
+        <el-table-column prop="group" label="分组" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.groupType" size="small" effect="plain">{{ row.group }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="metric" label="指标" width="170" />
+        <el-table-column prop="sklearn" label="Scikit-learn 随机森林" width="190" />
+        <el-table-column prop="spark" label="Spark MLlib 随机森林" width="190" />
+        <el-table-column label="评分" width="110">
+          <template #default="{ row }">
+            <el-tag v-if="row.grade" :type="row.gradeType" size="small" effect="dark" round>{{ row.grade }}</el-tag>
+            <span v-else style="color:#C0C4CC">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="说明" min-width="200">
           <template #default="{ row }">
             <span style="color:#6B7280;font-size:13px">{{ row.desc }}</span>
           </template>
@@ -148,6 +162,73 @@
         :title="compareNote"
       />
     </div>
+
+    <!-- 数据血缘 + 模型文件 -->
+    <el-row :gutter="20" style="margin-top:20px">
+      <el-col :xs="24" :md="14">
+        <div class="card">
+          <div class="card-title">
+            <span>数据血缘 · ETL 链路</span>
+            <el-tag type="warning" effect="light" size="small" round>三机集群实测</el-tag>
+          </div>
+          <el-table :data="lineageRows" size="small" stripe border>
+            <el-table-column prop="stage" label="阶段" width="110">
+              <template #default="{ row }">
+                <span style="font-weight:600">{{ row.stage }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="engine" label="引擎/组件" width="130" />
+            <el-table-column prop="count" label="数据量" width="130">
+              <template #default="{ row }">
+                <span v-if="row.count" style="font-weight:600;color:#2D6BFF">{{ row.count }}</span>
+                <span v-else style="color:#C0C4CC">—</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="desc" label="说明" min-width="180">
+              <template #default="{ row }">
+                <span style="color:#6B7280;font-size:12.5px">{{ row.desc }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="lineage-flow">
+            <el-tag size="small" effect="plain" type="primary">MySQL</el-tag>
+            <span class="flow-arrow">Sqoop →</span>
+            <el-tag size="small" effect="plain" type="primary">ODS</el-tag>
+            <span class="flow-arrow">Hive ETL →</span>
+            <el-tag size="small" effect="plain" type="primary">DWD</el-tag>
+            <span class="flow-arrow">Spark SQL →</span>
+            <el-tag size="small" effect="plain" type="primary">ADS</el-tag>
+            <span class="flow-arrow">→</span>
+            <el-tag size="small" effect="plain" type="primary">Django/Vue</el-tag>
+          </div>
+        </div>
+      </el-col>
+      <el-col :xs="24" :md="10">
+        <div class="card">
+          <div class="card-title">
+            <span>模型文件与配置</span>
+            <el-tag type="success" effect="light" size="small" round>生产加载</el-tag>
+          </div>
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="模型文件">rf_price_model.joblib</el-descriptions-item>
+            <el-descriptions-item label="模型类型">{{ sklearn.model || 'Scikit-learn RandomForestRegressor' }}</el-descriptions-item>
+            <el-descriptions-item label="文件大小">26 MB</el-descriptions-item>
+            <el-descriptions-item label="训练/测试样本">
+              {{ sklearn.train_size ? Number(sklearn.train_size).toLocaleString() : '-' }} / {{ sklearn.test_size ? Number(sklearn.test_size).toLocaleString() : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="树数量 / 最大深度">
+              {{ sklearn.n_estimators ?? '-' }} / {{ sklearn.max_depth ?? '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="训练耗时">
+              {{ sklearn.train_time_seconds ? sklearn.train_time_seconds + ' 秒' : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="最近训练时间">
+              <span style="color:#2D6BFF;font-weight:600">{{ sklearn.train_time || '-' }}</span>
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
@@ -171,23 +252,50 @@ const sklearn = computed(() => data.value.sklearn_metrics || {})
 const spark = computed(() => data.value.spark_metrics || {})
 const featureImportance = computed(() => data.value.feature_importance || [])
 
-// 指标明细行
+// 指标明细行（分组 + 评分）
+const gradeOf = (score, type) => {
+  if (score === undefined || score === null) return null
+  if (type === 'r2') {
+    if (score >= 0.9) return { text: '优秀', type: 'success' }
+    if (score >= 0.8) return { text: '良好', type: 'warning' }
+    return { text: '待提升', type: 'danger' }
+  }
+  if (score <= 2) return { text: '优秀', type: 'success' }
+  if (score <= 5) return { text: '良好', type: 'warning' }
+  return { text: '待提升', type: 'danger' }
+}
+
 const compareRows = computed(() => {
   const s = sklearn.value
   const sp = spark.value
+  const g1 = gradeOf(s.r2, 'r2')
+  const g2 = gradeOf(s.rmse)
+  const g3 = gradeOf(s.mae)
   return [
-    { metric: 'R² 决定系数', sklearn: s.r2?.toFixed(4) ?? '-', spark: sp.r2?.toFixed(4) ?? '-', desc: '越接近 1 拟合越好' },
-    { metric: 'RMSE (万元)', sklearn: s.rmse?.toFixed(4) ?? '-', spark: sp.rmse?.toFixed(4) ?? '-', desc: '均方根误差，越小越好' },
-    { metric: 'MAE (万元)', sklearn: s.mae?.toFixed(4) ?? '-', spark: sp.mae?.toFixed(4) ?? '-', desc: '平均绝对误差，越小越好' },
-    { metric: 'MAPE (%)', sklearn: s.mape?.toFixed(2) ?? '-', spark: '-', desc: '平均绝对百分比误差' },
-    { metric: '训练样本数', sklearn: s.train_size ? Number(s.train_size).toLocaleString() : '-', spark: sp.train_size ? Number(sp.train_size).toLocaleString() : '-', desc: '模型训练使用的样本量' },
-    { metric: '测试样本数', sklearn: s.test_size ? Number(s.test_size).toLocaleString() : '-', spark: sp.test_size ? Number(sp.test_size).toLocaleString() : '-', desc: '模型评估使用的样本量' },
-    { metric: '树数量', sklearn: s.n_estimators ?? '-', spark: sp.num_trees ?? '-', desc: '随机森林中决策树数量' },
-    { metric: '最大深度', sklearn: s.max_depth ?? '-', spark: sp.max_depth ?? '-', desc: '决策树最大深度' },
-    { metric: '训练耗时', sklearn: s.train_time_seconds ? `${s.train_time_seconds}s` : '-', spark: '-', desc: '训练花费时间' },
-    { metric: '训练时间', sklearn: s.train_time ?? '-', spark: sp.train_time ?? '-', desc: '模型训练完成时间' }
+    { group: '性能', groupType: 'primary', metric: 'R² 决定系数', sklearn: s.r2?.toFixed(4) ?? '-', spark: sp.r2?.toFixed(4) ?? '-', grade: g1?.text, gradeType: g1?.type, desc: '越接近 1 拟合越好' },
+    { group: '性能', groupType: 'primary', metric: 'RMSE (万元)', sklearn: s.rmse?.toFixed(4) ?? '-', spark: sp.rmse?.toFixed(4) ?? '-', grade: g2?.text, gradeType: g2?.type, desc: '均方根误差，越小越好' },
+    { group: '性能', groupType: 'primary', metric: 'MAE (万元)', sklearn: s.mae?.toFixed(4) ?? '-', spark: sp.mae?.toFixed(4) ?? '-', grade: g3?.text, gradeType: g3?.type, desc: '平均绝对误差，越小越好' },
+    { group: '性能', groupType: 'primary', metric: 'MAPE (%)', sklearn: s.mape?.toFixed(2) ?? '-', spark: '-', grade: null, gradeType: null, desc: '平均绝对百分比误差' },
+    { group: '数据', groupType: 'success', metric: '训练样本数', sklearn: s.train_size ? Number(s.train_size).toLocaleString() : '-', spark: sp.train_size ? Number(sp.train_size).toLocaleString() : '-', grade: null, gradeType: null, desc: '模型训练使用的样本量' },
+    { group: '数据', groupType: 'success', metric: '测试样本数', sklearn: s.test_size ? Number(s.test_size).toLocaleString() : '-', spark: sp.test_size ? Number(sp.test_size).toLocaleString() : '-', grade: null, gradeType: null, desc: '模型评估使用的样本量' },
+    { group: '配置', groupType: 'warning', metric: '树数量', sklearn: s.n_estimators ?? '-', spark: sp.num_trees ?? '-', grade: null, gradeType: null, desc: '随机森林中决策树数量' },
+    { group: '配置', groupType: 'warning', metric: '最大深度', sklearn: s.max_depth ?? '-', spark: sp.max_depth ?? '-', grade: null, gradeType: null, desc: '决策树最大深度' },
+    { group: '配置', groupType: 'warning', metric: '训练耗时', sklearn: s.train_time_seconds ? `${s.train_time_seconds}s` : '-', spark: '-', grade: null, gradeType: null, desc: '训练花费时间' },
+    { group: '配置', groupType: 'warning', metric: '训练时间', sklearn: s.train_time ?? '-', spark: sp.train_time ?? '-', grade: null, gradeType: null, desc: '模型训练完成时间' }
   ]
 })
+
+// 数据血缘（三机集群实测）
+const lineageRows = [
+  { stage: '业务库', engine: 'MySQL', count: '999,999 条', desc: 'car_info 车辆信息表（18 列）' },
+  { stage: '采集', engine: 'Sqoop', count: '999,998 条', desc: '14 列精确导入 HDFS' },
+  { stage: 'ODS', engine: 'Hive', count: '999,998 条', desc: '原始数据入仓 ods_car_info' },
+  { stage: 'DWD', engine: 'Hive MR ETL', count: '999,998 条', desc: '清洗去重 dwd_car_info (dt=20240101)' },
+  { stage: 'ADS', engine: 'Spark SQL', count: '28 行', desc: '品牌均价 stat_brand_price' },
+  { stage: 'ADS', engine: 'Spark SQL', count: '21 行', desc: '车龄价格 stat_age_price' },
+  { stage: 'ADS', engine: 'Spark SQL', count: '6 行', desc: '价格分布 stat_price_distribution' },
+  { stage: '应用层', engine: 'Django/Vue', count: '—', desc: '看板 / 预测 / 模型分析' }
+]
 
 // 说明：Spark MLlib 是早期小样本实验，与 sklearn 百万样本对比说明
 const compareNote = computed(() => {
@@ -454,6 +562,23 @@ onUnmounted(() => {
 
 .train-success-time {
   font-weight: 400;
+  color: #9CA3AF;
+  font-size: 12px;
+}
+
+.lineage-flow {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: #F9FAFB;
+  border-radius: 8px;
+  border: 1px dashed #E5E7EB;
+}
+
+.flow-arrow {
   color: #9CA3AF;
   font-size: 12px;
 }
