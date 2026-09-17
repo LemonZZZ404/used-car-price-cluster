@@ -4,7 +4,7 @@
       <!-- ============ Tab 1 模型总览 ============ -->
       <el-tab-pane label="模型总览" name="overview">
         <!-- 模型重训控制台 -->
-        <div class="card train-console">
+        <div class="card train-console" v-if="userStore.isAdmin">
           <div class="card-title" style="margin-bottom:14px">
             <span>模型重训控制台</span>
             <el-tag type="warning" effect="light" size="small" round>Celery 异步任务</el-tag>
@@ -320,7 +320,9 @@ import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { Odometer, TrendCharts, Aim, Cpu, Refresh, InfoFilled } from '@element-plus/icons-vue'
 import { getModelAnalysis, trainStart, trainStatus } from '@/api'
+import { useUserStore } from '@/stores/user'
 
+const userStore = useUserStore()
 const activeTab = ref('overview')
 const loading = ref(false)
 const data = ref({})

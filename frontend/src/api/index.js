@@ -9,9 +9,15 @@ const request = axios.create({
   }
 })
 
-// 请求拦截器
+// 请求拦截器：自动附加 Token
 request.interceptors.request.use(
-  config => config,
+  config => {
+    const token = localStorage.getItem('used_car_token')
+    if (token) {
+      config.headers.Authorization = `Token ${token}`
+    }
+    return config
+  },
   error => Promise.reject(error)
 )
 
@@ -19,11 +25,25 @@ request.interceptors.request.use(
 request.interceptors.response.use(
   response => response.data,
   error => {
+    const status = error.response?.status
+    // 401/403 且非登录接口：跳转登录
+    if ((status === 401 || status === 403) && !error.config?.url?.includes('/auth/')) {
+      localStorage.removeItem('used_car_token')
+      localStorage.removeItem('used_car_user')
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login'
+      }
+    }
     console.error('API Error:', error)
-    ElMessage.error(error.message || '请求失败')
+    ElMessage.error(error.response?.data?.message || error.message || '请求失败')
     return Promise.reject(error)
   }
 )
+
+// ============ 认证接口 ============
+export const authLogin = (data) => request.post('/auth/login/', data)
+export const authLogout = () => request.post('/auth/logout/')
+export const authMe = () => request.get('/auth/me/')
 
 // ============ 看板接口 ============
 export const getDashboardSummary = () => request.get('/dashboard/summary/')

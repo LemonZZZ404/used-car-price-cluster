@@ -7,7 +7,8 @@ from .views import (
     CarInfoViewSet, StatBrandPriceViewSet, StatAgePriceViewSet,
     StatPriceDistributionViewSet, PredictionViewSet,
     dashboard_summary, model_analysis, train_start, train_status, health_check,
-    stat_aggregate, market_compare
+    stat_aggregate, market_compare,
+    auth_login, auth_logout, auth_me
 )
 
 router = DefaultRouter()
@@ -39,4 +40,9 @@ urlpatterns = [
 
     # 市场行情对比（预测页）
     path('stat/market-compare/', market_compare, name='stat-market-compare'),
+
+    # 认证（用户/管理员分层）
+    path('auth/login/', auth_login, name='auth-login'),
+    path('auth/logout/', auth_logout, name='auth-logout'),
+    path('auth/me/', auth_me, name='auth-me'),
 ]

@@ -9,10 +9,13 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Count, Avg, Q
 from django.utils import timezone
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAdminUser
+from rest_framework.authtoken.models import Token
 from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import (
@@ -335,10 +338,10 @@ def model_analysis(request):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUser])
 def train_start(request):
     """
-    触发异步模型重训（Celery 任务）
+    触发异步模型重训（Celery 任务）- 仅管理员
     返回：任务是否已提交
     """
     from .tasks import run_training_task
@@ -374,10 +377,10 @@ def train_start(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUser])
 def train_status(request):
     """
-    查询训练任务状态
+    查询训练任务状态 - 仅管理员
     返回：status( idle/running/success/error )、progress(0-100)、metrics
     """
     status_file = os.path.join(settings.BASE_DIR.parent, 'ml', 'models', 'train_status.json')
@@ -559,5 +562,73 @@ def health_check(request):
         'status': 'ok',
         'service': '二手车价格评估系统API',
         'version': 'v1.0.0',
-        'time': timezone.now().strftime('%Y-%m-%d %H:%M:%S')
+        'auth': request.user.is_authenticated,
+        'user': request.user.username if request.user.is_authenticated else None,
+    })
+
+
+# ==================== 认证接口（用户/管理员分层） ====================
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def auth_login(request):
+    """
+    登录接口
+    参数：username / password
+    返回：token + 用户信息（is_staff 区分管理员/普通用户）
+    """
+    username = request.data.get('username', '').strip()
+    password = request.data.get('password', '')
+    if not username or not password:
+        return Response({'code': 400, 'message': '请输入用户名和密码', 'data': None},
+                        status=status.HTTP_400_BAD_REQUEST)
+    user = authenticate(request=request, username=username, password=password)
+    if user is None:
+        return Response({'code': 401, 'message': '用户名或密码错误', 'data': None},
+                        status=status.HTTP_401_UNAUTHORIZED)
+    if not user.is_active:
+        return Response({'code': 403, 'message': '账号已被禁用', 'data': None},
+                        status=status.HTTP_403_FORBIDDEN)
+    login(request, user)
+    token, _ = Token.objects.get_or_create(user=user)
+    return Response({
+        'code': 200,
+        'message': '登录成功',
+        'data': {
+            'token': token.key,
+            'user': {
+                'username': user.username,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
+                'role': 'admin' if user.is_staff else 'user'
+            }
+        }
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def auth_logout(request):
+    """登出接口：删除当前用户的 Token"""
+    if request.user.is_authenticated:
+        Token.objects.filter(user=request.user).delete()
+    logout(request)
+    return Response({'code': 200, 'message': '已退出登录', 'data': None})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def auth_me(request):
+    """获取当前登录用户信息（未登录返回匿名）"""
+    if not request.user.is_authenticated:
+        return Response({'code': 200, 'message': 'success', 'data': None})
+    return Response({
+        'code': 200,
+        'message': 'success',
+        'data': {
+            'username': request.user.username,
+            'is_staff': request.user.is_staff,
+            'is_superuser': request.user.is_superuser,
+            'role': 'admin' if request.user.is_staff else 'user'
+        }
     })
