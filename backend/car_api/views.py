@@ -407,6 +407,152 @@ def train_status(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+def stat_aggregate(request):
+    """
+    实时聚合接口（看板筛选联动）
+    参数：brand / city / min_price / max_price（均可选）
+    返回：筛选后的总量/均价 + 车龄-价格序列 + 价格分布（ECharts 格式）
+    无筛选时走 Spark 预聚合表（stat_*），有筛选时实时聚合 car_info
+    """
+    brand = request.query_params.get('brand', '').strip()
+    city = request.query_params.get('city', '').strip()
+    min_price = request.query_params.get('min_price')
+    max_price = request.query_params.get('max_price')
+
+    has_filter = bool(brand or city or min_price or max_price)
+    cache_key = f'stat_agg_{brand}_{city}_{min_price}_{max_price}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response({'code': 200, 'message': 'success (cached)', 'data': cached})
+
+    try:
+        if not has_filter:
+            # 无筛选：直接使用 Spark 预聚合结果，零负担
+            age_rows = StatAgePrice.objects.all().order_by('age')
+            dist_rows = list(StatPriceDistribution.objects.all())
+            order = {'0-5万': 1, '5-10万': 2, '10-15万': 3, '15-20万': 4,
+                     '20-30万': 5, '30-50万': 6, '50-100万': 7, '100万以上': 8}
+            dist_rows.sort(key=lambda x: order.get(x.price_range, 99))
+            data = {
+                'total_cars': CarInfo.objects.count(),
+                'avg_price': round(float(CarInfo.objects.aggregate(a=Avg('price'))['a'] or 0), 2),
+                'age_chart': {
+                    'xAxis': [f"{r.age}年" for r in age_rows],
+                    'series': [
+                        {'name': '平均售价', 'type': 'line', 'smooth': True,
+                         'data': [float(r.avg_price) for r in age_rows], 'areaStyle': {}},
+                        {'name': '车辆数量', 'type': 'bar', 'yAxisIndex': 1,
+                         'data': [r.car_count for r in age_rows]}
+                    ]
+                },
+                'price_dist': {
+                    'pie_data': [{'name': r.price_range, 'value': r.car_count} for r in dist_rows],
+                    'total': sum(r.car_count for r in dist_rows)
+                },
+                'filters': {'brand': brand, 'city': city, 'min_price': min_price, 'max_price': max_price}
+            }
+        else:
+            # 有筛选：实时聚合（brand/city 有索引，百万级秒回）
+            q = Q()
+            if brand:
+                q &= Q(brand=brand)
+            if city:
+                q &= Q(city=city)
+            if min_price:
+                q &= Q(price__gte=float(min_price))
+            if max_price:
+                q &= Q(price__lte=float(max_price))
+            qs = CarInfo.objects.filter(q)
+            total = qs.count()
+            avg = qs.aggregate(a=Avg('price'))['a']
+
+            age_rows = qs.values('age').annotate(c=Count('id'), ap=Avg('price')).order_by('age')
+            age_x, age_price, age_count = [], [], []
+            for r in age_rows:
+                if r['age'] is None:
+                    continue
+                age_x.append(f"{r['age']}年")
+                age_price.append(round(float(r['ap']), 2))
+                age_count.append(r['c'])
+
+            ranges = [('0-5万', 0, 5), ('5-10万', 5, 10), ('10-15万', 10, 15),
+                      ('15-20万', 15, 20), ('20-30万', 20, 30), ('30-50万', 30, 50),
+                      ('50-100万', 50, 100), ('100万以上', 100, None)]
+            dist = []
+            for name, lo, hi in ranges:
+                rq = Q(price__gte=lo)
+                if hi:
+                    rq &= Q(price__lt=hi)
+                else:
+                    rq &= Q(price__gte=100)
+                dist.append({'name': name, 'value': qs.filter(rq).count()})
+
+            data = {
+                'total_cars': total,
+                'avg_price': round(float(avg), 2) if avg else 0,
+                'age_chart': {
+                    'xAxis': age_x,
+                    'series': [
+                        {'name': '平均售价', 'type': 'line', 'smooth': True,
+                         'data': age_price, 'areaStyle': {}},
+                        {'name': '车辆数量', 'type': 'bar', 'yAxisIndex': 1, 'data': age_count}
+                    ]
+                },
+                'price_dist': {'pie_data': dist, 'total': total},
+                'filters': {'brand': brand, 'city': city, 'min_price': min_price, 'max_price': max_price}
+            }
+        cache.set(cache_key, data, 60)
+        return Response({'code': 200, 'message': 'success', 'data': data})
+    except Exception as e:
+        logger.error(f"[统计] 聚合接口异常: {e}", exc_info=True)
+        return Response({'code': 500, 'message': f'聚合失败: {str(e)}', 'data': None},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def market_compare(request):
+    """
+    市场行情对比接口（预测页用）
+    参数：brand / age
+    返回：全局均价、同品牌均价、同车龄均价（用于预测价对比）
+    """
+    brand = request.query_params.get('brand', '').strip()
+    try:
+        age = int(request.query_params.get('age', 0))
+    except (TypeError, ValueError):
+        age = 0
+
+    cache_key = f'market_cmp_{brand}_{age}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response({'code': 200, 'message': 'success (cached)', 'data': cached})
+
+    try:
+        all_avg = CarInfo.objects.aggregate(a=Avg('price'))['a']
+        brand_avg = None
+        age_avg = None
+        if brand:
+            ba = CarInfo.objects.filter(brand=brand).aggregate(a=Avg('price'))['a']
+            brand_avg = round(float(ba), 2) if ba else None
+        if age is not None:
+            aa = CarInfo.objects.filter(age=age).aggregate(a=Avg('price'))['a']
+            age_avg = round(float(aa), 2) if aa else None
+        data = {
+            'all_avg': round(float(all_avg), 2) if all_avg else 0,
+            'brand_avg': brand_avg,
+            'age_avg': age_avg,
+        }
+        cache.set(cache_key, data, 120)
+        return Response({'code': 200, 'message': 'success', 'data': data})
+    except Exception as e:
+        logger.error(f"[统计] 市场对比接口异常: {e}", exc_info=True)
+        return Response({'code': 500, 'message': f'对比失败: {str(e)}', 'data': None},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
 def health_check(request):
     """健康检查接口"""
     return Response({

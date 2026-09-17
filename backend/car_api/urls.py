@@ -6,7 +6,8 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CarInfoViewSet, StatBrandPriceViewSet, StatAgePriceViewSet,
     StatPriceDistributionViewSet, PredictionViewSet,
-    dashboard_summary, model_analysis, train_start, train_status, health_check
+    dashboard_summary, model_analysis, train_start, train_status, health_check,
+    stat_aggregate, market_compare
 )
 
 router = DefaultRouter()
@@ -32,4 +33,10 @@ urlpatterns = [
 
     # 健康检查
     path('health/', health_check, name='health-check'),
+
+    # 统计聚合（看板筛选联动）
+    path('stat/aggregate/', stat_aggregate, name='stat-aggregate'),
+
+    # 市场行情对比（预测页）
+    path('stat/market-compare/', market_compare, name='stat-market-compare'),
 ]

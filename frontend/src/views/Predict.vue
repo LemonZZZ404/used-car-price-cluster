@@ -108,27 +108,25 @@
               <span>价格影响因子（SHAP 可解释性）</span>
               <el-tag size="small" type="info" effect="plain" round>模型归因分析</el-tag>
             </div>
-            <div class="explain-list">
-              <div v-for="item in result.explain" :key="item.feature" class="explain-item">
-                <div class="explain-label">{{ item.label }}</div>
-                <div class="explain-bar">
-                  <div
-                    class="explain-fill"
-                    :class="item.direction === 'up' ? 'fill-up' : 'fill-down'"
-                    :style="{ width: explainWidth(item.impact, result.explain) + '%' }"
-                  ></div>
-                </div>
-                <div class="explain-impact" :class="item.direction === 'up' ? 'impact-up' : 'impact-down'">
-                  {{ item.impact > 0 ? '+' : '' }}{{ item.impact }} 万
-                </div>
-                <el-tag :type="item.direction === 'up' ? 'success' : 'danger'" size="small" effect="light" round>
-                  {{ item.direction === 'up' ? '推高' : '拉低' }}
-                </el-tag>
-              </div>
-            </div>
+            <div ref="shapChartRef" class="factor-chart"></div>
             <div class="explain-note">
               <el-icon><InfoFilled /></el-icon>
               <span>基于 SHAP 值解释：绿色代表推高价格，红色代表拉低价格</span>
+            </div>
+          </div>
+
+          <el-divider />
+
+          <!-- 市场行情对比 -->
+          <div class="explain-block" v-if="marketData && result">
+            <div class="explain-title">
+              <span>市场行情对比</span>
+              <el-tag size="small" type="warning" effect="light" round>基于 100 万条交易数据</el-tag>
+            </div>
+            <div ref="marketChartRef" class="factor-chart"></div>
+            <div class="explain-note">
+              <el-icon><InfoFilled /></el-icon>
+              <span>将本次预测价与全市场 / 同品牌 / 同车龄的平均成交价进行对比</span>
             </div>
           </div>
 
@@ -174,10 +172,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
+import * as echarts from 'echarts'
 import { MagicStick, DataAnalysis, CircleCheckFilled, InfoFilled } from '@element-plus/icons-vue'
-import { predictPrice, getCarBrands, getCarCities, getModelInfo } from '@/api'
+import { predictPrice, getCarBrands, getCarCities, getModelInfo, getMarketCompare } from '@/api'
 
 const formRef = ref(null)
 const loading = ref(false)
@@ -185,6 +184,12 @@ const result = ref(null)
 const modelInfo = ref({})
 const brands = ref([])
 const cities = ref([])
+const marketData = ref(null)
+const shapChartRef = ref(null)
+const marketChartRef = ref(null)
+
+let shapChart = null
+let marketChart = null
 
 const displacements = ['1.0L', '1.2T', '1.4T', '1.5L', '1.5T', '1.6L', '1.8L', '2.0L', '2.0T', '2.5L', '3.0T', '纯电']
 const fuelTypes = ['汽油', '柴油', '纯电动', '混合动力', '插电混动']
@@ -234,9 +239,115 @@ const loadModelInfo = async () => {
   }
 }
 
-const explainWidth = (impact, list) => {
-  const max = Math.max(...list.map(i => Math.abs(i.impact)), 0.1)
-  return Math.max((Math.abs(impact) / max) * 100, 4)
+// SHAP 影响因子横向条形图（红绿双色）
+const renderShap = () => {
+  if (!shapChartRef.value || !result.value?.explain?.length) return
+  if (!shapChart) shapChart = echarts.init(shapChartRef.value)
+  const list = result.value.explain
+  shapChart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (ps) => {
+        const p = ps[0]
+        const item = list[p.dataIndex]
+        if (!item) return ''
+        return `${item.label}<br/>影响：${item.impact > 0 ? '+' : ''}${item.impact} 万（${item.direction === 'up' ? '推高' : '拉低'}）`
+      }
+    },
+    grid: { left: '4%', right: '14%', top: 8, bottom: 8, containLabel: true },
+    xAxis: {
+      type: 'value', name: '影响(万元)',
+      nameTextStyle: { color: '#9CA3AF' },
+      axisLabel: { color: '#6B7280' },
+      splitLine: { lineStyle: { color: '#F3F4F6' } }
+    },
+    yAxis: {
+      type: 'category',
+      data: list.map(i => i.label),
+      axisLabel: { color: '#4B5563' },
+      axisLine: { lineStyle: { color: '#E5E7EB' } }
+    },
+    series: [{
+      type: 'bar',
+      data: list.map(i => ({
+        value: Number(Number(i.impact).toFixed(2)),
+        itemStyle: { color: i.direction === 'up' ? '#22C55E' : '#EF4444', borderRadius: 4 }
+      })),
+      barMaxWidth: 18,
+      label: {
+        show: true,
+        position: 'right',
+        formatter: (p) => `${p.value > 0 ? '+' : ''}${p.value}万`,
+        color: (p) => p.value >= 0 ? '#16A34A' : '#DC2626',
+        fontWeight: 600
+      }
+    }]
+  })
+  shapChart.resize()
+}
+
+// 加载市场行情对比
+const loadMarketCompare = async () => {
+  if (!result.value) return
+  const params = {
+    brand: result.value.input_params?.brand,
+    age: result.value.input_params?.age
+  }
+  try {
+    const res = await getMarketCompare(params)
+    if (res.code === 200) {
+      marketData.value = res.data
+      await nextTick()
+      renderMarketChart()
+    }
+  } catch (e) {
+    // 市场对比失败不阻塞预测结果展示
+  }
+}
+
+// 市场对比柱状图（预测价 vs 市场均价）
+const renderMarketChart = () => {
+  if (!marketChartRef.value || !marketData.value) return
+  if (!marketChart) marketChart = echarts.init(marketChartRef.value)
+  const d = marketData.value
+  const rows = [
+    { name: '本次预测', value: Number(Number(result.value.predicted_price).toFixed(2)), color: '#2D6BFF' }
+  ]
+  if (d.brand_avg != null) rows.push({ name: '同品牌均价', value: Number(d.brand_avg), color: '#22C55E' })
+  if (d.age_avg != null) rows.push({ name: '同车龄均价', value: Number(d.age_avg), color: '#F59E0B' })
+  rows.push({ name: '全市场均价', value: Number(d.all_avg), color: '#9CA3AF' })
+
+  marketChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: rows.map(r => r.name),
+      axisLabel: { color: '#6B7280' },
+      axisLine: { lineStyle: { color: '#E5E7EB' } }
+    },
+    yAxis: {
+      type: 'value', name: '万元',
+      nameTextStyle: { color: '#9CA3AF' },
+      axisLabel: { color: '#6B7280' },
+      splitLine: { lineStyle: { color: '#F3F4F6' } }
+    },
+    series: [{
+      type: 'bar',
+      data: rows.map(r => ({
+        value: r.value,
+        itemStyle: { color: r.color, borderRadius: [4, 4, 0, 0] }
+      })),
+      barMaxWidth: 44,
+      label: {
+        show: true, position: 'top',
+        formatter: '{c} 万',
+        color: '#4B5563', fontWeight: 600
+      }
+    }]
+  })
+  marketChart.resize()
 }
 
 const handlePredict = async () => {
@@ -245,11 +356,15 @@ const handlePredict = async () => {
     if (!valid) return
     loading.value = true
     result.value = null
+    marketData.value = null
     try {
       const res = await predictPrice({ ...form })
       if (res.code === 200) {
         result.value = res.data
         ElMessage.success('预测完成')
+        await nextTick()
+        renderShap()
+        loadMarketCompare()
       } else {
         ElMessage.error(res.message || '预测失败')
       }
@@ -265,6 +380,11 @@ onMounted(() => {
   loadBrands()
   loadCities()
   loadModelInfo()
+})
+
+onUnmounted(() => {
+  shapChart?.dispose()
+  marketChart?.dispose()
 })
 </script>
 
@@ -339,6 +459,11 @@ onMounted(() => {
 
 .explain-block {
   padding: 4px 2px;
+}
+
+.factor-chart {
+  width: 100%;
+  height: 260px;
 }
 
 .explain-title {

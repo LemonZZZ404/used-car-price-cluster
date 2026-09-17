@@ -32,6 +32,8 @@ export const getDashboardSummary = () => request.get('/dashboard/summary/')
 export const getBrandPriceTop10 = () => request.get('/stat/brand-price/top10/')
 export const getAgePriceChart = () => request.get('/stat/age-price/chart/')
 export const getPriceDistributionChart = () => request.get('/stat/price-distribution/chart/')
+export const getStatAggregate = (params) => request.get('/stat/aggregate/', { params })
+export const getMarketCompare = (params) => request.get('/stat/market-compare/', { params })
 
 // ============ 模型分析接口 ============
 export const getModelAnalysis = () => request.get('/model/analysis/')
